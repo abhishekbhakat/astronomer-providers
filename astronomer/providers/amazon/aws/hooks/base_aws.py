@@ -34,6 +34,12 @@ class AwsBaseHookAsync(AwsBaseHook):
 
     async def get_client_async(self) -> AioBaseClient:
         """Create an Async Client object to communicate with AWS services."""
+        # Try to use airflow provider client implementation
+        try:
+            return self.get_aioclient()
+        except Exception:
+            pass
+
         # Fetch the Airflow connection object
         connection_object = await sync_to_async(self.get_connection)(self.aws_conn_id)  # type: ignore[arg-type]
 
@@ -86,3 +92,12 @@ class AwsBaseHookAsync(AwsBaseHook):
                 )
                 return_response = response["Credentials"]
             return return_response
+
+    def get_aioclient(self):
+        session = self.get_session(region_name=self.region_name, deferrable=True)
+        return session.client(
+            self.client_type,
+            endpoint_url=self.conn_config.endpoint_url,
+            config=self._get_config(),
+            verify=self.verify,
+        )
