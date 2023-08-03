@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from typing import Any, AsyncIterator, Sequence
 
+from airflow.providers.cncf.kubernetes.hooks.kubernetes import KubernetesHook
 from airflow.providers.cncf.kubernetes.utils.pod_manager import PodPhase
 from airflow.triggers.base import TriggerEvent
-from kubernetes_asyncio import client
-from kubernetes_asyncio.client import CoreV1Api
-
 from astronomer.providers.cncf.kubernetes.hooks.kubernetes import KubernetesHookAsync
 from astronomer.providers.cncf.kubernetes.triggers.wait_container import (
     WaitContainerTrigger,
 )
 from astronomer.providers.google.cloud import _get_gke_config_file
+from kubernetes_asyncio import client
+from kubernetes_asyncio.client import CoreV1Api
 
 
 class GKEStartPodTrigger(WaitContainerTrigger):
@@ -114,10 +114,35 @@ class GKEStartPodTrigger(WaitContainerTrigger):
                     "config_file": config_file,
                     "in_cluster": self.in_cluster,
                 }
-                hook = KubernetesHookAsync(conn_id=None, **hook_params)
 
+                with open(config_file) as f:
+                    self.log.debug(f"kube_config content {f.read()}")
+
+                self.log.debug("Run in sync first")
+                hook = KubernetesHook(conn_id=None, **hook_params)
+                client = hook.core_v1_client
+                pod = client.read_namespaced_pod(self.pod_name, self.pod_namespace)
+                phase = pod.status.phase
+                self.log.debug(f"sync: get pod {pod} with phase {phase} without encountering issue")
+                if phase == PodPhase.SUCCEEDED:
+                    yield TriggerEvent({"status": "done", "namespace": self.namespace, "pod_name": self.name})
+
+                elif phase == PodPhase.FAILED:
+                    yield TriggerEvent(
+                        {
+                            "status": "failed",
+                            "namespace": self.namespace,
+                            "pod_name": self.name,
+                            "description": "Failed to start pod operator",
+                        }
+                    )
+
+                self.log.debug("Run in async first")
+                hook = KubernetesHookAsync(conn_id=None, **hook_params)
                 async with await hook.get_api_client_async() as api_client:
+                    self.log.debug("async: try to get client")
                     v1_api = CoreV1Api(api_client)
+                    self.log.debug("async: try to get pod list")
                     state = await self.wait_for_pod_start(v1_api)
                     if state == PodPhase.SUCCEEDED:
                         event = TriggerEvent(
