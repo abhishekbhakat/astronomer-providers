@@ -100,6 +100,12 @@ def _get_gke_config_file(
                 config_content = yaml.safe_load(input_file.read())
 
             config_content["users"][0]["user"]["token"] = impersonated_creds.token
+            config_content["users"][0]["user"]["auth-provider"] = {}
+            config_content["users"][0]["user"]["auth-provider"]["name"] = "gcp"
+            config_content["users"][0]["user"]["auth-provider"]["config"] = {}
+            config_content["users"][0]["user"]["auth-provider"]["config"][
+                "access-token"
+            ] = impersonated_creds.token
             with open(conf_file.name, "w") as output_file:
                 yaml.dump(config_content, output_file)
         # Tell `KubernetesPodOperator` where the config file is located
