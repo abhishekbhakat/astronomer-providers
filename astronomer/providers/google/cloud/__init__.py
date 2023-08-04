@@ -24,6 +24,7 @@ def _get_gke_config_file(
     regional: bool,
     location: str,
     use_internal_ip: bool,
+    cluster_context: str | None = None,
 ) -> Generator[str, None, None]:  # pragma: no cover
     hook = GoogleBaseHook(gcp_conn_id=gcp_conn_id)
     project_id = project_id or hook.project_id
@@ -83,6 +84,7 @@ def _get_gke_config_file(
         execute_in_subprocess(cmd)
 
         if impersonation_account:
+            # get token
             creds = hook.get_credentials()
             impersonated_creds = impersonated_credentials.Credentials(
                 source_credentials=creds,
@@ -96,17 +98,34 @@ def _get_gke_config_file(
             except Exception as e:
                 raise Exception(f"Error while creating impersonated creds: {e}")
 
+            # read config
             with open(conf_file.name) as input_file:
                 config_content = yaml.safe_load(input_file.read())
 
-            config_content["users"][0]["user"]["token"] = impersonated_creds.token
-            config_content["users"][0]["user"]["auth-provider"] = {}
-            config_content["users"][0]["user"]["auth-provider"]["name"] = "gcp"
-            config_content["users"][0]["user"]["auth-provider"]["config"] = {}
-            config_content["users"][0]["user"]["auth-provider"]["config"][
-                "access-token"
-            ] = impersonated_creds.token
+            # find the context
+            if not cluster_context:
+                cluster_context = config_content["current-context"]
+
+            user_name = ""
+            for context in config_content["contexts"]:
+                if context["name"] == cluster_context:
+                    user_name = context["context"]["user"]
+                    break
+
+            user_index = 0
+            for user_index, user in enumerate(config_content["users"]):
+                if user["name"] == user_name:
+                    user_index
+                    break
+
+            # update the token
+            config_content["users"][user_index]["user"]["auth-provider"] = {
+                "name": "gcp",
+                "config": {"access-token": impersonated_creds.token},
+            }
+
             with open(conf_file.name, "w") as output_file:
                 yaml.dump(config_content, output_file)
+
         # Tell `KubernetesPodOperator` where the config file is located
         yield os.environ[KUBE_CONFIG_ENV_VAR]

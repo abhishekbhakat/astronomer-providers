@@ -108,6 +108,7 @@ class GKEStartPodTrigger(WaitContainerTrigger):
                 regional=self.regional,
                 location=self.location,
                 use_internal_ip=self.use_internal_ip,
+                cluster_context=self.cluster_context,
             ) as config_file:
                 hook_params: dict[str, Any] = {
                     "cluster_context": self.cluster_context,
@@ -137,7 +138,7 @@ class GKEStartPodTrigger(WaitContainerTrigger):
                         }
                     )
 
-                self.log.debug("Run in async first")
+                self.log.debug("Run in async")
                 hook = KubernetesHookAsync(conn_id=None, **hook_params)
                 async with await hook.get_api_client_async() as api_client:
                     self.log.debug("async: try to get client")
