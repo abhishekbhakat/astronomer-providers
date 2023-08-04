@@ -103,6 +103,7 @@ class GKEStartPodOperatorAsync(KubernetesPodOperator):
             regional=self.regional,
             location=self.location,
             use_internal_ip=self.use_internal_ip,
+            cluster_context=self.cluster_context
         ) as config_file:
             self.config_file = config_file
             self.pod_request_obj = self.build_pod_request_obj(context)
@@ -115,42 +116,43 @@ class GKEStartPodOperatorAsync(KubernetesPodOperator):
         self._get_or_create_pod(context)
         self.log.info("Created pod=%s in namespace=%s", self.pod_name, self.pod_namespace)
 
-        event = None
-        try:
-            with _get_gke_config_file(
-                gcp_conn_id=self.gcp_conn_id,
-                project_id=self.project_id,
-                cluster_name=self.cluster_name,
-                impersonation_chain=self.impersonation_chain,
-                regional=self.regional,
-                location=self.location,
-                use_internal_ip=self.use_internal_ip,
-            ) as config_file:
-                hook_params: dict[str, Any] = {
-                    "cluster_context": self.cluster_context,
-                    "config_file": config_file,
-                    "in_cluster": self.in_cluster,
-                }
-                hook = KubernetesHook(conn_id=None, **hook_params)
-                client = hook.core_v1_client
-                pod = client.read_namespaced_pod(self.pod_name, self.pod_namespace)
-                phase = pod.status.phase
-                if phase == PodPhase.SUCCEEDED:
-                    event = {"status": "done", "namespace": self.namespace, "pod_name": self.name}
-
-                elif phase == PodPhase.FAILED:
-                    event = {
-                        "status": "failed",
-                        "namespace": self.namespace,
-                        "pod_name": self.name,
-                        "description": "Failed to start pod operator",
-                    }
-        except Exception as e:
-            event = {"status": "error", "message": str(e)}
-
-        if event:
-            return self.trigger_reentry(context, event)
-
+        # event = None
+        # try:
+        #     with _get_gke_config_file(
+        #         gcp_conn_id=self.gcp_conn_id,
+        #         project_id=self.project_id,
+        #         cluster_name=self.cluster_name,
+        #         impersonation_chain=self.impersonation_chain,
+        #         regional=self.regional,
+        #         location=self.location,
+        #         use_internal_ip=self.use_internal_ip,
+        #         cluster_context=self.cluster_context
+        #     ) as config_file:
+        #         hook_params: dict[str, Any] = {
+        #             "cluster_context": self.cluster_context,
+        #             "config_file": config_file,
+        #             "in_cluster": self.in_cluster,
+        #         }
+        #         hook = KubernetesHook(conn_id=None, **hook_params)
+        #         client = hook.core_v1_client
+        #         pod = client.read_namespaced_pod(self.pod_name, self.pod_namespace)
+        #         phase = pod.status.phase
+        #         if phase == PodPhase.SUCCEEDED:
+        #             event = {"status": "done", "namespace": self.namespace, "pod_name": self.name}
+        #
+        #         elif phase == PodPhase.FAILED:
+        #             event = {
+        #                 "status": "failed",
+        #                 "namespace": self.namespace,
+        #                 "pod_name": self.name,
+        #                 "description": "Failed to start pod operator",
+        #             }
+        # except Exception as e:
+        #     event = {"status": "error", "message": str(e)}
+        #
+        # if event:
+        #     return self.trigger_reentry(context, event)
+        #
         self.defer(
             trigger=GKEStartPodTrigger(
                 namespace=self.pod_namespace,
